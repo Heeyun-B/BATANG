@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
-import type { FloorOpening, FloorRoom, FloorWall, IfcElementInfo, Point2D } from '../types'
+import type { FloorLayer, FloorOpening, FloorRoom, FloorWall, IfcElementInfo, Point2D } from '../types'
 import type { ThreeDLibraryPreset } from '../components/canvas/threeDLibrary.types'
 import type { WorkspaceCommand, WorkspaceCommandSource } from '../types/workspaceCommand.types'
 import {
@@ -19,9 +19,21 @@ const IFC_GLOBAL_ID_PATTERN = /^[0-9A-Za-z_$]{22}$/
 const TRANSLATION_EPSILON = 1e-6
 
 const toIfcGlobalId = (id: string): string | null => {
-  if (IFC_GLOBAL_ID_PATTERN.test(id)) return id
-  const candidate = id.split('-floor-')[0]
+  const trimmed = id.trim()
+  if (IFC_GLOBAL_ID_PATTERN.test(trimmed)) return trimmed
+  const candidate = trimmed.split('-floor-')[0]
   return IFC_GLOBAL_ID_PATTERN.test(candidate) ? candidate : null
+}
+
+const toIfcGlobalIdList = (value: unknown): string[] => {
+  const values = Array.isArray(value) ? value : [value]
+  const ids = new Set<string>()
+  values.forEach((item) => {
+    if (typeof item !== 'string') return
+    const globalId = toIfcGlobalId(item)
+    if (globalId) ids.add(globalId)
+  })
+  return Array.from(ids)
 }
 
 const toIfcElementCommandId = (element: IfcElementInfo): string | null => {
@@ -209,6 +221,39 @@ export function useWorkspaceCommandPublisher({
     return true
   }, [])
 
+  const markSnapshotOnlyChange = useCallback((
+    reason: string,
+    id = 'floor-plan-snapshot',
+    metadata: Record<string, unknown> = {},
+  ) => {
+    const patch = compactRecord({
+      reason,
+      ...metadata,
+    })
+    if (!hasMeaningfulValue(patch)) return
+    pendingCommandRef.current = updateEntityCommand('floorPlanSnapshot', id, patch)
+  }, [])
+
+  const createFloorLayer = useCallback((layer: FloorLayer) => {
+    pendingCommandRef.current = createEntityCommand('floorLayer', layer.id, compactRecord({
+      name: layer.name,
+      storeyName: layer.storeyName,
+      storeyGlobalId: layer.storeyGlobalId,
+      elevationMm: layer.elevationMm,
+      ceilingHeightMm: layer.ceilingHeightMm,
+    }))
+  }, [])
+
+  const updateFloorLayer = useCallback((layerId: string, patch: Record<string, unknown>) => {
+    const nextPatch = compactRecord(patch)
+    if (!hasMeaningfulValue(nextPatch)) return
+    pendingCommandRef.current = updateEntityCommand('floorLayer', layerId, nextPatch)
+  }, [])
+
+  const deleteFloorLayer = useCallback((layerId: string) => {
+    pendingCommandRef.current = deleteEntityCommand('floorLayer', layerId)
+  }, [])
+
   const createWall = useCallback((wall: FloorWall) => {
     if (issuedLocalCreateIdsRef.current.has(wall.id)) return
     const startMm = toWorkerMmPoint(wall.startMm)
@@ -287,7 +332,7 @@ export function useWorkspaceCommandPublisher({
       return
     }
 
-    if (startMm || endMm) {
+    if (startMm && endMm) {
       pendingCommandRef.current = updateEntityCommand('wall', globalId, compactRecord({
         storeyGlobalId,
         storeyName,
@@ -541,13 +586,17 @@ export function useWorkspaceCommandPublisher({
     const translationZ = getFiniteNumber(translationMm?.z)
     if (translationX !== null || translationY !== null || translationZ !== null) {
       if (!hasNonZeroTranslation(translationX, translationY, translationZ)) return
-      pendingCommandRef.current = updateEntityCommand('room', globalId, {
+      const affectedElementGlobalIds = toIfcGlobalIdList(
+        patch.affectedElementGlobalIds ?? patch.affectedGlobalIds ?? patch.affectedWallGlobalIds,
+      )
+      pendingCommandRef.current = updateEntityCommand('room', globalId, compactRecord({
         translationMm: compactRecord({
           x: translationX,
           y: translationY,
           z: translationZ,
         }),
-      })
+        affectedElementGlobalIds: affectedElementGlobalIds.length > 0 ? affectedElementGlobalIds : undefined,
+      }))
       return
     }
 
@@ -608,6 +657,15 @@ export function useWorkspaceCommandPublisher({
     updateWall(wallId, patch)
   }, [updateWall])
 
+  const markFloorPlanLayoutChanged = useCallback((patch: Record<string, unknown>) => {
+    const normalizedPatch = compactRecord({
+      ...patch,
+      clientUpdatedAtMs: Date.now(),
+    })
+    if (!hasMeaningfulValue(normalizedPatch)) return
+    pendingCommandRef.current = updateEntityCommand('floor_plan_layout', 'layout', normalizedPatch)
+  }, [])
+
   return useMemo(() => ({
     createWall,
     updateWall,
@@ -620,26 +678,35 @@ export function useWorkspaceCommandPublisher({
     updateWallGeometry,
     updateWallEndpoint,
     updateWallStyle,
+    markFloorPlanLayoutChanged,
     updateIfcElement,
     deleteIfcElement,
     createLibraryElement,
     deleteLibraryElement,
     updateRoom,
     deleteRoom,
+    markSnapshotOnlyChange,
+    createFloorLayer,
+    updateFloorLayer,
+    deleteFloorLayer,
     hasPendingCommand,
     consumePendingCommand,
   }), [
     consumePendingCommand,
+    createFloorLayer,
     createOpening,
     createLibraryElement,
     createRoom,
     createWall,
+    deleteFloorLayer,
     deleteIfcElement,
     deleteLibraryElement,
     deleteOpening,
     deleteRoom,
     deleteWall,
     hasPendingCommand,
+    markSnapshotOnlyChange,
+    updateFloorLayer,
     updateIfcElement,
     updateOpening,
     updateRoom,
@@ -647,6 +714,7 @@ export function useWorkspaceCommandPublisher({
     updateWallEndpoint,
     updateWallGeometry,
     updateWallStyle,
+    markFloorPlanLayoutChanged,
     upsertOpening,
   ])
 }
