@@ -417,17 +417,3 @@ uv run python scripts/run_shinchan_production_pipeline.py  # production 렌더 �
 | **프로젝트 전체** | 수정 사이클 단축으로 설계 기간·비용 절감. IFC 인계로 Revit 실시설계 단계까지 끊김 없이 연결 |
 
 ---
-
-## 13. 팀
-
-SSAFY 14기 자율 PJT — **A204 BATANG 팀**
-
-| 이름   | 역할           | 이메일                  |
-| :----- | :------------- | :---------------------- |
-| 김나연 | AI / Backend / 팀장 | mandubong1206@gmail.com |
-| 김태영 | Frontend | okaysky11@gmail.com |
-| 박동한 | AI / Backend / Infra / Frontend | vkfkdtor00@gmail.com |
-| 박연준 | Backend        | hnn06134@gmail.com |
-| 변희연 | AI / Project Manager | pbhy@naver.com |
-| 양대천 | AI | bigskyyang@gmail.com |
-| 오지수 | Frontend / Backend / PD | ohjisu320@gmail.com |
